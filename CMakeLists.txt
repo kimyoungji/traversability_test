@@ -25,11 +25,13 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   image_transport
   pcl_ros
+  cv_bridge
   message_filters
 )
 
 ## System dependencies are found with CMake's conventions
 find_package(Eigen3 REQUIRED)
+find_package(OpenCV REQUIRED)
 
 
 ###################################
@@ -57,6 +59,7 @@ catkin_package(
     sensor_msgs
     image_transport
     pcl_ros
+    cv_bridge
     message_filters    
 )
 

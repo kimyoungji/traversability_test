@@ -18,9 +18,8 @@ namespace traversability_test {
 
         readParameters();
 
+        // Subscribers
         it_ = new image_transport::ImageTransport(nodeHandle_);
-
-//        imageSubscriber_ = nodeHandle_.subscribe(imageTopic_, 1, &TMapping::imageCallback, this);
         imageSubscriber_ = it_->subscribeCamera(imageTopic_, 10,&TMapping::imageCallback, this);
 
         robotPoseSubscriber_.subscribe(nodeHandle_, robotPoseTopic_, 1);
@@ -30,6 +29,13 @@ namespace traversability_test {
         gridMapToInitTraversabilityMapSubscriber_ = nodeHandle_.subscribe(
                 gridMapToInitTraversabilityMapTopic_, 1, &TMapping::gridMapToInitTraversabilityMapCallback, this);
 
+//        // TF subscribe
+//        try {
+//            transformListener_.transformPoint(traversabilityMap_.getMapFrameId(), submapPoint_, submapPointTransformed);
+//        } catch (tf::TransformException& ex) {
+//        ROS_ERROR("%s", ex.what());
+//        return false;
+//        }
     }
 
     TMapping::~TMapping()
@@ -41,6 +47,7 @@ namespace traversability_test {
     {
         // Read parameters for image subscriber.
         nodeHandle_.param("image_topic", imageTopic_, string("/image_elevation"));
+        nodeHandle_.param("camera_topic", cameraTopic_, string("cassie/front_camera"));
 
         // Read parameters for pose subscriber.
         nodeHandle_.param("robot_pose_with_covariance_topic", robotPoseTopic_, string("/pose"));
@@ -52,24 +59,88 @@ namespace traversability_test {
     }
 
     void TMapping::imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg) {
-//        //image processing
-//        cv_bridge::CvImagePtr cv_ptr;
-//        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
-//        left_image = cv_ptr->image;       
-//        ancient_width = left_image.cols;
-//        cv::resize(left_image, left_image, cv::Size(), scale, scale);
-//        Left_received = true; 
-//        cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
-//        clahe->setClipLimit(5);
-//        clahe->apply(left_image,left_image);
 
-//        //camera info
-//        P0 = Map<const MatrixXd>(&infomsg->P[0], 3, 4);  
+        //image processing
+        cv_bridge::CvImagePtr cv_ptr;
+        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
+        image_ = cv_ptr->image;       
+
+        //camera info
+        P0_ = Eigen::Map<const Eigen::MatrixXd>(&infomsg->P[0], 3, 4);
+
+
+        /***************************************/
+        /*****transform map to camera frame*****/
+        /***************************************/
+        sensor_msgs::PointCloud2 submapTransformed_cloud2;
+        sensor_msgs::PointCloud submap_cloud;
+        sensor_msgs::PointCloud submapTransformed_cloud;
+        sensor_msgs::convertPointCloud2ToPointCloud(submap_cloud2, submap_cloud);
+        try {
+//            transformListener_.transformPointCloud(cameraTopic_, submap_, submapTransformed_);
+            transformListener_.transformPointCloud(cameraTopic_, ros::Time::now(), submap_cloud, "/map", submapTransformed_cloud);
+        } catch (tf::TransformException& ex) {
+        ROS_ERROR("%s", ex.what());
+        }
+        sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, submapTransformed_cloud2);
+
+        // To PCLPointCloud2
+        pcl::PointCloud<pcl::PointXYZRGB> input;
+        pcl::fromROSMsg(submapTransformed_cloud2, input);
+        pcl::toPCLPointCloud2(input, submap_);
+
+ 
+        // Add normals to submap_       
+        pcl::PointCloud<pcl::PointXYZ>::Ptr xyz (new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::fromROSMsg(submapTransformed_cloud2, *xyz);
+
+        pcl::PointCloud<pcl::Normal> normals;
+        pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+        ne.setInputCloud (xyz);
+        ne.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
+        ne.setKSearch (10);
+        ne.setRadiusSearch (10);
+        ne.compute (normals);
+
+        pcl::PCLPointCloud2 output_normals;
+        pcl::toPCLPointCloud2 (normals, output_normals);
+        pcl::concatenateFields (submap_, output_normals, submap_);
+
+//        // Project to image  
+
+//        // reference frame for the projection
+//        // e.g. take XZ plane around 0,0,0 of length 100 and map to 128*128 image
+//        Eigen::Vector3f origin = Eigen::Vector3f(0,0,0);
+//        Eigen::Vector3f axis_x = Eigen::Vector3f(1,0,0);
+//        Eigen::Vector3f axis_y = Eigen::Vector3f(0,0,1);
+//        float length    = 100;
+//        int image_size  = 128;
+
+//        auto aux_cloud = ProjectToPlane(submap_, origin, axis_x, axis_y);
+//        // aux_cloud now contains the points of original_cloud, with:
+//        //      xyz coordinates projected to XZ plane
+//        //      color (intensity) of the original_cloud (remains unchanged)
+//        //      normals - we lose the normal information, as we use this field to save the projection information. if you wish to keep the normal data, you should define a custom PointType. 
+//        // note: for the sake of projection, the origin is only used to define the plane, so any arbitrary point on the plane can be used
+
+
+//        auto grid = GenerateGrid(origin, axis_x , axis_y, length, image_size);
+//        // organized cloud that can be trivially mapped to an image
+
+//        float max_resolution = 2 * length / image_size;
+//        int max_nn_to_consider = 16;
+//        InterpolateToGrid(aux_cloud, grid, max_resolution, max_nn_to_consider);
+
     }
 
     void TMapping::gridMapToInitTraversabilityMapCallback(const grid_map_msgs::GridMap& message) {
-      grid_map::GridMap gridMap;
-      grid_map::GridMapRosConverter::fromMessage(message, gridMap);
+
+
+        // To sensor_msgs::PointCloud2
+        grid_map::GridMap gridMap;
+        grid_map::GridMapRosConverter::fromMessage(message, gridMap);
+        grid_map::GridMapRosConverter::toPointCloud(gridMap,"elevation", submap_cloud2);
+
     }
 
 }  // namespace traversability_test
