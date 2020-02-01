@@ -46,15 +46,17 @@ namespace traversability_test {
     void TMapping::readParameters()
     {
         // Read parameters for image subscriber.
-        nodeHandle_.param("image_topic", imageTopic_, string("/image_elevation"));
-        nodeHandle_.param("camera_topic", cameraTopic_, string("cassie/front_camera"));
+        nodeHandle_.param("image_topic", imageTopic_, string("/camera/color/image_raw"));
+        nodeHandle_.param("camera_topic", cameraTopic_, string("camera_color_optical_frame"));
 
         // Read parameters for pose subscriber.
         nodeHandle_.param("robot_pose_with_covariance_topic", robotPoseTopic_, string("/pose"));
         nodeHandle_.param("robot_pose_cache_size", robotPoseCacheSize_, 200);
 
         // Read parameters for grid map subscriber.
-        nodeHandle_.param("grid_map_topic_name", gridMapToInitTraversabilityMapTopic_, string("traversability_estimation/traversability_map"));
+        nodeHandle_.param("grid_map_topic_name", gridMapToInitTraversabilityMapTopic_, string("/traversability_estimation/traversability_map"));
+
+        cout<<gridMapToInitTraversabilityMapTopic_<<endl;
 
     }
 
@@ -77,19 +79,19 @@ namespace traversability_test {
         sensor_msgs::PointCloud submapTransformed_cloud;
         sensor_msgs::convertPointCloud2ToPointCloud(submap_cloud2, submap_cloud);
         try {
-//            transformListener_.transformPointCloud(cameraTopic_, submap_, submapTransformed_);
-            transformListener_.transformPointCloud(cameraTopic_, ros::Time::now(), submap_cloud, "/map", submapTransformed_cloud);
+//            transformListener_.transformPointCloud(cameraTopic_, submap_cloud, submapTransformed_cloud);
+            transformListener_.transformPointCloud(cameraTopic_, msg->header.stamp, submap_cloud, "/map", submapTransformed_cloud);
         } catch (tf::TransformException& ex) {
         ROS_ERROR("%s", ex.what());
+        return;
         }
         sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, submapTransformed_cloud2);
 
         // To PCLPointCloud2
-        pcl::PointCloud<pcl::PointXYZRGB> input;
+        pcl::PointCloud<pcl::PointXYZI> input;
         pcl::fromROSMsg(submapTransformed_cloud2, input);
         pcl::toPCLPointCloud2(input, submap_);
 
- 
         // Add normals to submap_       
         pcl::PointCloud<pcl::PointXYZ>::Ptr xyz (new pcl::PointCloud<pcl::PointXYZ>);
         pcl::fromROSMsg(submapTransformed_cloud2, *xyz);
@@ -98,8 +100,8 @@ namespace traversability_test {
         pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
         ne.setInputCloud (xyz);
         ne.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
-        ne.setKSearch (10);
-        ne.setRadiusSearch (10);
+//        ne.setKSearch (10);
+        ne.setRadiusSearch (0.1);
         ne.compute (normals);
 
         pcl::PCLPointCloud2 output_normals;
@@ -140,6 +142,14 @@ namespace traversability_test {
         grid_map::GridMap gridMap;
         grid_map::GridMapRosConverter::fromMessage(message, gridMap);
         grid_map::GridMapRosConverter::toPointCloud(gridMap,"elevation", submap_cloud2);
+        submap_cloud2.fields[9].name = "intensity";
+//        for  (size_t i = 0; i < 11; ++i){
+//        cout<<submap_cloud2.fields[i].name<<endl;
+//        }
+//        std::vector<std::string> layers = gridMap.getLayers();
+//        for (const auto& layer : layers) {
+//        cout<<layer<<endl;
+//        }
 
     }
 
