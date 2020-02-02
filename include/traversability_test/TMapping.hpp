@@ -41,10 +41,12 @@
 #include <sensor_msgs/point_field_conversion.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 
+
 #include <image_transport/image_transport.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <message_filters/cache.h>
 #include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <depth_image_proc/depth_conversions.h>
@@ -94,6 +96,7 @@ class TMapping {
     ros::Subscriber velodyneSubscriber_;
 
     // Callbacks.
+    void imagesCallback(const sensor_msgs::ImageConstPtr& msg1, const sensor_msgs::ImageConstPtr& msg2, const sensor_msgs::CameraInfoConstPtr & infomsg);
     void depthCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg);
     void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg);
     void gridMapToInitTraversabilityMapCallback(const grid_map_msgs::GridMap& message);

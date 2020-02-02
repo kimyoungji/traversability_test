@@ -23,6 +23,12 @@ namespace traversability_test {
         depthSubscriber_ = it_->subscribeCamera(depthTopic_, 1, &TMapping::depthCallback, this);
         imageSubscriber_ = it_->subscribeCamera(imageTopic_, 1, &TMapping::imageCallback, this);
 
+//        message_filters::Subscriber<sensor_msgs::Image> image_sub(nodeHandle_, imageTopic_, 1);
+//        message_filters::Subscriber<sensor_msgs::Image> depth_sub(nodeHandle_, depthTopic_, 1);
+//        message_filters::Subscriber<sensor_msgs::CameraInfo> info_sub(nodeHandle_, cameraTopic_, 1);
+//        message_filters::TimeSynchronizer<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> sync(image_sub, depth_sub, info_sub, 10);
+//        sync.registerCallback(boost::bind(&TMapping::imagesCallback, this, _1, _2, _3));
+
         velodyneSubscriber_ = nodeHandle_.subscribe(pointCloudTopic_, 1, &TMapping::pointCloudCallback, this);
 
 
@@ -65,6 +71,104 @@ namespace traversability_test {
 
         cout<<gridMapToInitTraversabilityMapTopic_<<endl;
 
+    }
+
+    void TMapping::imagesCallback(const sensor_msgs::ImageConstPtr& msg1, const sensor_msgs::ImageConstPtr& msg2, const sensor_msgs::CameraInfoConstPtr & infomsg){
+
+
+        // Depth manipulation//
+        sensor_msgs::PointCloud2::Ptr cloud_msg(new sensor_msgs::PointCloud2);
+        cloud_msg->header = msg2->header;
+        cloud_msg->height = msg2->height;
+        cloud_msg->width  = msg2->width;
+        cloud_msg->is_dense = false;
+        cloud_msg->is_bigendian = false;
+
+        sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud_msg);
+        pcd_modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::PointField::FLOAT32, "y", 1, sensor_msgs::PointField::FLOAT32, "z", 1, sensor_msgs::PointField::FLOAT32, "intensity", 1, sensor_msgs::PointField::FLOAT32);
+
+        // Update camera model
+        image_geometry::PinholeCameraModel camModel;
+        camModel.fromCameraInfo(infomsg);
+
+        depth_image_proc::convert<uint16_t>(msg2, cloud_msg, camModel);
+
+        //To gridMap_ frame   
+        sensor_msgs::PointCloud submap_cloud;
+        sensor_msgs::PointCloud submapTransformed_cloud;
+        sensor_msgs::convertPointCloud2ToPointCloud(*cloud_msg, submap_cloud);     
+        try {
+            transformListener_.transformPointCloud("/map", msg2->header.stamp, submap_cloud, cameraTopic_, submapTransformed_cloud);
+        } catch (tf::TransformException& ex) {
+        ROS_ERROR("%s", ex.what());
+        return;
+        }
+        sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, velodyne_cloud_);
+
+
+        sensor_msgs::PointCloud2Iterator<float> iter_x(velodyne_cloud_, "x");
+        sensor_msgs::PointCloud2Iterator<float> iter_y(velodyne_cloud_, "y");
+        sensor_msgs::PointCloud2Iterator<float> iter_z(velodyne_cloud_, "z");
+        sensor_msgs::PointCloud2Iterator<float> iter_intensity(velodyne_cloud_, "intensity");
+
+        for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_intensity)
+        {
+            grid_map::Index index;
+            grid_map::Position position(*iter_x, *iter_y);
+            if (!gridMap_.getIndex(position, index)) continue;
+            *iter_intensity = gridMap_.at("traversability", index);
+        }
+
+        // Image processing //
+        cv_bridge::CvImagePtr cv_ptr;
+        cv_ptr = cv_bridge::toCvCopy(msg1, sensor_msgs::image_encodings::RGB8);
+        image_ = cv_ptr->image;       
+
+
+        /***************************************/
+        /*****transform map to camera frame*****/
+        /***************************************/
+        sensor_msgs::PointCloud2 submapTransformed_cloud2;
+//        sensor_msgs::PointCloud submap_cloud;
+//        sensor_msgs::PointCloud submapTransformed_cloud;
+        sensor_msgs::convertPointCloud2ToPointCloud(velodyne_cloud_, submap_cloud);
+        try {
+//            transformListener_.transformPointCloud(cameraTopic_, submap_cloud, submapTransformed_cloud);
+            transformListener_.transformPointCloud(cameraTopic_, msg1->header.stamp, submap_cloud, "/map", submapTransformed_cloud);
+        } catch (tf::TransformException& ex) {
+        ROS_ERROR("%s", ex.what());
+        return;
+        }
+        sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, submapTransformed_cloud2);
+
+        // To PCLPointCloud2
+        pcl::PointCloud<pcl::PointXYZI> input;
+        pcl::fromROSMsg(submapTransformed_cloud2, input);
+
+        cv::Mat proj_img(cv::Size(infomsg->width, infomsg->height), CV_8UC3,cv::Scalar(255,255,255));
+        for (size_t i = 0; i < input.points.size(); ++i)
+        {
+            cv::Point3d pt;
+            cv::Point2d uv;
+            if(input.points[i].z>0){
+                pt.x = input.points[i].x;
+                pt.y = input.points[i].y;
+                pt.z = input.points[i].z;
+                uv = camModel.project3dToPixel(pt);
+//                cout<<uv.x<<endl;
+                if(uv.x<infomsg->width && uv.x>0.0 && uv.y<infomsg->height && uv.y>0.0){
+                    proj_img.at<cv::Vec3b>(uv.y,uv.x) = cv::Vec3b(0,255.0*input.points[i].intensity,255.0*(1.0-input.points[i].intensity));
+                }
+            }
+        }
+        cv::Mat added_image; 
+        cv::addWeighted(image_,0.5,proj_img,0.5,0,added_image);
+        imwrite("alpha.png", added_image);
+//        cv::namedWindow( "Display window", cv::WINDOW_AUTOSIZE );// Create a window for display.
+//        cv::imshow( "Display window", proj_img );                   // Show our image inside it.
+//        cv::waitKey(0);
+
+        isCloudIn = false;
     }
 
 //    void TMapping::imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg) {
@@ -142,64 +246,60 @@ namespace traversability_test {
 
     void TMapping::imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg) {
         
-        if(isCloudIn)
-        {
         //image processing
         cv_bridge::CvImagePtr cv_ptr;
         cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::RGB8);
         image_ = cv_ptr->image;       
 
-        //camera info
-        P0_ = Eigen::Map<const Eigen::MatrixXd>(&infomsg->P[0], 3, 4);
-        image_geometry::PinholeCameraModel camModel;
-        camModel.fromCameraInfo(infomsg);
+//        //camera info
+//        P0_ = Eigen::Map<const Eigen::MatrixXd>(&infomsg->P[0], 3, 4);
+//        image_geometry::PinholeCameraModel camModel;
+//        camModel.fromCameraInfo(infomsg);
 
 
-        /***************************************/
-        /*****transform map to camera frame*****/
-        /***************************************/
-        sensor_msgs::PointCloud2 submapTransformed_cloud2;
-        sensor_msgs::PointCloud submap_cloud;
-        sensor_msgs::PointCloud submapTransformed_cloud;
-        sensor_msgs::convertPointCloud2ToPointCloud(velodyne_cloud_, submap_cloud);
-        try {
-//            transformListener_.transformPointCloud(cameraTopic_, submap_cloud, submapTransformed_cloud);
-            transformListener_.transformPointCloud(cameraTopic_, msg->header.stamp, submap_cloud, "/map", submapTransformed_cloud);
-        } catch (tf::TransformException& ex) {
-        ROS_ERROR("%s", ex.what());
-        return;
-        }
-        sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, submapTransformed_cloud2);
+//        /***************************************/
+//        /*****transform map to camera frame*****/
+//        /***************************************/
+//        sensor_msgs::PointCloud2 submapTransformed_cloud2;
+//        sensor_msgs::PointCloud submap_cloud;
+//        sensor_msgs::PointCloud submapTransformed_cloud;
+//        sensor_msgs::convertPointCloud2ToPointCloud(velodyne_cloud_, submap_cloud);
+//        try {
+////            transformListener_.transformPointCloud(cameraTopic_, submap_cloud, submapTransformed_cloud);
+//            transformListener_.transformPointCloud(cameraTopic_, msg->header.stamp, submap_cloud, "/map", submapTransformed_cloud);
+//        } catch (tf::TransformException& ex) {
+//        ROS_ERROR("%s", ex.what());
+//        return;
+//        }
+//        sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, submapTransformed_cloud2);
 
-        // To PCLPointCloud2
-        pcl::PointCloud<pcl::PointXYZI> input;
-        pcl::fromROSMsg(submapTransformed_cloud2, input);
+//        // To PCLPointCloud2
+//        pcl::PointCloud<pcl::PointXYZI> input;
+//        pcl::fromROSMsg(submapTransformed_cloud2, input);
 
-        cv::Mat proj_img(cv::Size(infomsg->width, infomsg->height), CV_8UC3,cv::Scalar(255,255,255));
-        for (size_t i = 0; i < input.points.size(); ++i)
-        {
-            cv::Point3d pt;
-            cv::Point2d uv;
-            if(input.points[i].z>0){
-                pt.x = input.points[i].x;
-                pt.y = input.points[i].y;
-                pt.z = input.points[i].z;
-                uv = camModel.project3dToPixel(pt);
-//                cout<<uv.x<<endl;
-                if(uv.x<infomsg->width && uv.x>0.0 && uv.y<infomsg->height && uv.y>0.0){
-                    proj_img.at<cv::Vec3b>(uv.y,uv.x) = cv::Vec3b(0,255.0*input.points[i].intensity,255.0*(1.0-input.points[i].intensity));
-                }
-            }
-        }
-        cv::Mat added_image; 
-        cv::addWeighted(image_,0.5,proj_img,0.5,0,added_image);
-        imwrite("alpha.png", added_image);
-//        cv::namedWindow( "Display window", cv::WINDOW_AUTOSIZE );// Create a window for display.
-//        cv::imshow( "Display window", proj_img );                   // Show our image inside it.
-//        cv::waitKey(0);
+//        cv::Mat proj_img(cv::Size(infomsg->width, infomsg->height), CV_8UC3,cv::Scalar(255,255,255));
+//        for (size_t i = 0; i < input.points.size(); ++i)
+//        {
+//            cv::Point3d pt;
+//            cv::Point2d uv;
+//            if(input.points[i].z>0){
+//                pt.x = input.points[i].x;
+//                pt.y = input.points[i].y;
+//                pt.z = input.points[i].z;
+//                uv = camModel.project3dToPixel(pt);
+////                cout<<uv.x<<endl;
+//                if(uv.x<infomsg->width && uv.x>0.0 && uv.y<infomsg->height && uv.y>0.0){
+//                    proj_img.at<cv::Vec3b>(uv.y,uv.x) = cv::Vec3b(255.0*input.points[i].intensity,0,255.0*(1.0-input.points[i].intensity));
+//                }
+//            }
+//        }
+//        cv::Mat added_image; 
+//        cv::addWeighted(image_,0.5,proj_img,0.5,0,added_image);
+//        imwrite("alpha.png", added_image);
+////        cv::namedWindow( "Display window", cv::WINDOW_AUTOSIZE );// Create a window for display.
+////        cv::imshow( "Display window", proj_img );                   // Show our image inside it.
+////        cv::waitKey(0);
 
-        isCloudIn = false;
-        }
 
     }
 
@@ -249,7 +349,65 @@ namespace traversability_test {
             *iter_intensity = gridMap_.at("traversability", index);
         }
 
-        isCloudIn = true;
+//        isCloudIn = true;
+
+        pcl::PointCloud<pcl::PointXYZI> input;
+        pcl::fromROSMsg(velodyne_cloud_, input);
+        cv::Mat proj_img(cv::Size(infomsg->width, infomsg->height), CV_8UC3,cv::Scalar(255,255,255));
+        for (size_t i = 0; i < infomsg->height; ++i)
+        {
+            for (size_t j = 0; j < infomsg->width; ++j){
+            proj_img.at<cv::Vec3b>(i,j) = cv::Vec3b(255.0*input.points[i*infomsg->width+j].intensity,0,255.0*(1.0-input.points[i*infomsg->width+j].intensity));
+            }
+        }
+        cv::Mat added_image; 
+        cv::addWeighted(image_,0.5,proj_img,0.5,0,added_image);
+        imwrite("alpha.png", added_image);
+
+
+//        /***************************************/
+//        /*****transform map to camera frame*****/
+//        /***************************************/
+//        sensor_msgs::PointCloud2 submapTransformed_cloud2;
+////        sensor_msgs::PointCloud submap_cloud;
+////        sensor_msgs::PointCloud submapTransformed_cloud;
+//        sensor_msgs::convertPointCloud2ToPointCloud(velodyne_cloud_, submap_cloud);
+//        try {
+////            transformListener_.transformPointCloud(cameraTopic_, submap_cloud, submapTransformed_cloud);
+//            transformListener_.transformPointCloud(cameraTopic_, msg->header.stamp, submap_cloud, "/map", submapTransformed_cloud);
+//        } catch (tf::TransformException& ex) {
+//        ROS_ERROR("%s", ex.what());
+//        return;
+//        }
+//        sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, submapTransformed_cloud2);
+
+//        // To PCLPointCloud2
+//        pcl::PointCloud<pcl::PointXYZI> input;
+//        pcl::fromROSMsg(submapTransformed_cloud2, input);
+
+//        cv::Mat proj_img(cv::Size(infomsg->width, infomsg->height), CV_8UC3,cv::Scalar(255,255,255));
+//        for (size_t i = 0; i < input.points.size(); ++i)
+//        {
+//            cv::Point3d pt;
+//            cv::Point2d uv;
+//            if(input.points[i].z>0){
+//                pt.x = input.points[i].x;
+//                pt.y = input.points[i].y;
+//                pt.z = input.points[i].z;
+//                uv = camModel.project3dToPixel(pt);
+////                cout<<uv.x<<endl;
+//                if(uv.x<infomsg->width && uv.x>0.0 && uv.y<infomsg->height && uv.y>0.0){
+//                    proj_img.at<cv::Vec3b>(uv.y,uv.x) = cv::Vec3b(255.0*input.points[i].intensity,0,255.0*(1.0-input.points[i].intensity));
+//                }
+//            }
+//        }
+//        cv::Mat added_image; 
+//        cv::addWeighted(image_,0.5,proj_img,0.5,0,added_image);
+//        imwrite("alpha.png", added_image);
+////        cv::namedWindow( "Display window", cv::WINDOW_AUTOSIZE );// Create a window for display.
+////        cv::imshow( "Display window", proj_img );                   // Show our image inside it.
+////        cv::waitKey(0);
+
     }
 
 
