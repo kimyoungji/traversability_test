@@ -13,7 +13,7 @@ using namespace std;
 namespace traversability_test {
 
     TMapping::TMapping(ros::NodeHandle& nodeHandle)
-    : nodeHandle_(nodeHandle)
+    : nodeHandle_(nodeHandle), octree_(128.0f)
     {
 
         readParameters();
@@ -64,11 +64,13 @@ namespace traversability_test {
 
         //image processing
         cv_bridge::CvImagePtr cv_ptr;
-        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
+        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::RGB8);
         image_ = cv_ptr->image;       
 
         //camera info
         P0_ = Eigen::Map<const Eigen::MatrixXd>(&infomsg->P[0], 3, 4);
+        image_geometry::PinholeCameraModel camModel;
+        camModel.fromCameraInfo(infomsg);
 
 
         /***************************************/
@@ -90,23 +92,62 @@ namespace traversability_test {
         // To PCLPointCloud2
         pcl::PointCloud<pcl::PointXYZI> input;
         pcl::fromROSMsg(submapTransformed_cloud2, input);
-        pcl::toPCLPointCloud2(input, submap_);
+//        pcl::toPCLPointCloud2(input, submap_);
 
-        // Add normals to submap_       
+        //extract local map & project to cvmat
         pcl::PointCloud<pcl::PointXYZ>::Ptr xyz (new pcl::PointCloud<pcl::PointXYZ>);
         pcl::fromROSMsg(submapTransformed_cloud2, *xyz);
+        octree_.setInputCloud (xyz);
+        octree_.addPointsFromInputCloud ();
 
-        pcl::PointCloud<pcl::Normal> normals;
-        pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
-        ne.setInputCloud (xyz);
-        ne.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
-//        ne.setKSearch (10);
-        ne.setRadiusSearch (0.1);
-        ne.compute (normals);
+        pcl::PointXYZ searchPoint;
+        searchPoint.x = 0.0;
+        searchPoint.y = 0.0;
+        searchPoint.z = 0.0;
+        std::vector<int> pointIdxRadiusSearch;
+        std::vector<float> pointRadiusSquaredDistance;
+        octree_.radiusSearch (searchPoint, 100.0f, pointIdxRadiusSearch, pointRadiusSquaredDistance);
 
-        pcl::PCLPointCloud2 output_normals;
-        pcl::toPCLPointCloud2 (normals, output_normals);
-        pcl::concatenateFields (submap_, output_normals, submap_);
+        cv::Mat proj_img = cv::Mat::zeros(cv::Size(infomsg->width, infomsg->height), CV_8UC3);
+        for (size_t i = 0; i < pointIdxRadiusSearch.size (); ++i)
+        {
+            cv::Point3d pt;
+            cv::Point2d uv;
+            if(input.points[ pointIdxRadiusSearch[i] ].z>0){
+                pt.x = input.points[ pointIdxRadiusSearch[i] ].x;
+                pt.y = input.points[ pointIdxRadiusSearch[i] ].y;
+                pt.z = input.points[ pointIdxRadiusSearch[i] ].z;
+                uv = camModel.project3dToPixel(pt);
+//                cout<<uv.x<<endl;
+                if(uv.x<infomsg->width && uv.x>0.0 && uv.y<infomsg->height && uv.y>0.0){
+                    proj_img.at<cv::Vec3b>(uv.y,uv.x) = cv::Vec3b(0,0,255.0*(1.0-input.points[ pointIdxRadiusSearch[i] ].intensity));
+                }
+            }
+        }
+        cv::Mat added_image; 
+        cv::addWeighted(image_,0.5,proj_img,0.5,0,added_image);
+        imwrite("alpha.png", added_image);
+//        cv::namedWindow( "Display window", cv::WINDOW_AUTOSIZE );// Create a window for display.
+//        cv::imshow( "Display window", proj_img );                   // Show our image inside it.
+//        cv::waitKey(0);
+
+        //iterations over the inputs
+
+//        // Add normals to submap_       
+//        pcl::PointCloud<pcl::PointXYZ>::Ptr xyz (new pcl::PointCloud<pcl::PointXYZ>);
+//        pcl::fromROSMsg(submapTransformed_cloud2, *xyz);
+
+//        pcl::PointCloud<pcl::Normal> normals;
+//        pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+//        ne.setInputCloud (xyz);
+//        ne.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
+////        ne.setKSearch (10);
+//        ne.setRadiusSearch (0.1);
+//        ne.compute (normals);
+
+//        pcl::PCLPointCloud2 output_normals;
+//        pcl::toPCLPointCloud2 (normals, output_normals);
+//        pcl::concatenateFields (submap_, output_normals, submap_);
 
 //        // Project to image  
 
@@ -133,6 +174,8 @@ namespace traversability_test {
 //        int max_nn_to_consider = 16;
 //        InterpolateToGrid(aux_cloud, grid, max_resolution, max_nn_to_consider);
 
+//        image_mask is std::pair<cv::Mat, cv::Mat>
+//        auto image_mask = ConvertGridToImage(grid, false);
     }
 
     void TMapping::gridMapToInitTraversabilityMapCallback(const grid_map_msgs::GridMap& message) {
@@ -150,6 +193,7 @@ namespace traversability_test {
 //        for (const auto& layer : layers) {
 //        cout<<layer<<endl;
 //        }
+
 
     }
 

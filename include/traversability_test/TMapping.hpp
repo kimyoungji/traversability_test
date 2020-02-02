@@ -17,6 +17,10 @@
 #include <pcl/features/normal_3d.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+#include <pcl/octree/octree.h>
+#include <pcl/octree/octree_pointcloud.h>
+#include <pcl/octree/octree_iterator.h>
+#include <pcl/octree/octree_impl.h> 
 
 // cv
 #include <opencv2/highgui/highgui.hpp>
@@ -38,6 +42,7 @@
 #include <sensor_msgs/point_field_conversion.h>
 
 #include <image_transport/image_transport.h>
+#include <image_geometry/pinhole_camera_model.h>
 #include <message_filters/cache.h>
 #include <message_filters/subscriber.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
@@ -95,6 +100,7 @@ class TMapping {
     //submap msgs
     sensor_msgs::PointCloud2 submap_cloud2;
     pcl::PCLPointCloud2 submap_;
+    pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> octree_;
 //    pcl::PCLPointCloud2 submapTransformed_;
 
     pcl::PointCloud<pcl::PointXYZINormal>::Ptr ProjectToPlane(pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud, Eigen::Vector3f origin, Eigen::Vector3f axis_x, Eigen::Vector3f axis_y)

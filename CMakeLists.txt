@@ -24,6 +24,7 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   sensor_msgs
   image_transport
+  image_geometry
   pcl_ros
   cv_bridge
   message_filters
@@ -58,6 +59,7 @@ catkin_package(
     geometry_msgs
     sensor_msgs
     image_transport
+    image_geometry
     pcl_ros
     cv_bridge
     message_filters    
