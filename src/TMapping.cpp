@@ -20,7 +20,8 @@ namespace traversability_test {
 
         // Subscribers
         it_ = new image_transport::ImageTransport(nodeHandle_);
-        imageSubscriber_ = it_->subscribeCamera(imageTopic_, 1,&TMapping::imageCallback, this);
+        depthSubscriber_ = it_->subscribeCamera(depthTopic_, 1, &TMapping::depthCallback, this);
+        imageSubscriber_ = it_->subscribeCamera(imageTopic_, 1, &TMapping::imageCallback, this);
 
         velodyneSubscriber_ = nodeHandle_.subscribe(pointCloudTopic_, 1, &TMapping::pointCloudCallback, this);
 
@@ -50,6 +51,7 @@ namespace traversability_test {
     {
         // Read parameters for image subscriber.
         nodeHandle_.param("image_topic", imageTopic_, string("/camera/color/image_raw"));
+        nodeHandle_.param("depth_topic", depthTopic_, string("/camera/aligned_depth_to_color/image_raw"));
         nodeHandle_.param("camera_topic", cameraTopic_, string("camera_color_optical_frame"));
         nodeHandle_.param("pointcloud_topic", pointCloudTopic_, string("/velodyne_points"));
         nodeHandle_.param("velodyne_topic", velodyneTopic_, string("velodyne_actual"));
@@ -185,7 +187,7 @@ namespace traversability_test {
                 uv = camModel.project3dToPixel(pt);
 //                cout<<uv.x<<endl;
                 if(uv.x<infomsg->width && uv.x>0.0 && uv.y<infomsg->height && uv.y>0.0){
-                    proj_img.at<cv::Vec3b>(uv.y,uv.x) = cv::Vec3b(255.0*input.points[i].intensity,0,255.0*(1.0-input.points[i].intensity));
+                    proj_img.at<cv::Vec3b>(uv.y,uv.x) = cv::Vec3b(0,255.0*input.points[i].intensity,255.0*(1.0-input.points[i].intensity));
                 }
             }
         }
@@ -201,43 +203,37 @@ namespace traversability_test {
 
     }
 
-    void TMapping::gridMapToInitTraversabilityMapCallback(const grid_map_msgs::GridMap& message) {
+
+    void TMapping::depthCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg){
+
+        sensor_msgs::PointCloud2::Ptr cloud_msg(new sensor_msgs::PointCloud2);
+        cloud_msg->header = msg->header;
+        cloud_msg->height = msg->height;
+        cloud_msg->width  = msg->width;
+        cloud_msg->is_dense = false;
+        cloud_msg->is_bigendian = false;
+
+        sensor_msgs::PointCloud2Modifier pcd_modifier(*cloud_msg);
+        pcd_modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::PointField::FLOAT32, "y", 1, sensor_msgs::PointField::FLOAT32, "z", 1, sensor_msgs::PointField::FLOAT32, "intensity", 1, sensor_msgs::PointField::FLOAT32);
+
+        // Update camera model
+        image_geometry::PinholeCameraModel camModel;
+        camModel.fromCameraInfo(infomsg);
+ 
+        depth_image_proc::convert<uint16_t>(msg, cloud_msg, camModel);
 
 
-        // To sensor_msgs::PointCloud2
-//        grid_map::GridMap gridMap;
-        grid_map::GridMapRosConverter::fromMessage(message, gridMap_);
-        grid_map::GridMapRosConverter::toPointCloud(gridMap_,"elevation", submap_cloud2);
-        submap_cloud2.fields[9].name = "intensity";
-//        for  (size_t i = 0; i < 11; ++i){
-//        cout<<submap_cloud2.fields[i].name<<endl;
-//        }
-//        std::vector<std::string> layers = gridMap.getLayers();
-//        for (const auto& layer : layers) {
-//        cout<<layer<<endl;
-//        }
-
-
-    }
-
-    void TMapping::pointCloudCallback(const sensor_msgs::PointCloud2& message) {
-
-//        velodyne_cloud_.clear();
         sensor_msgs::PointCloud submap_cloud;
         sensor_msgs::PointCloud submapTransformed_cloud;
-        sensor_msgs::convertPointCloud2ToPointCloud(message, submap_cloud);
+        sensor_msgs::convertPointCloud2ToPointCloud(*cloud_msg, submap_cloud);
         //To gridMap_ frame        
         try {
-            transformListener_.transformPointCloud("/map", message.header.stamp, submap_cloud, velodyneTopic_, submapTransformed_cloud);
+            transformListener_.transformPointCloud("/map", msg->header.stamp, submap_cloud, cameraTopic_, submapTransformed_cloud);
         } catch (tf::TransformException& ex) {
         ROS_ERROR("%s", ex.what());
         return;
         }
         sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, velodyne_cloud_);
-
-//        cout<<velodyne_cloud_.fields[0].name<<endl;
-//        cout<<velodyne_cloud_.fields[3].name<<endl;
-//        cout<<velodyne_cloud_.fields[4].name<<endl;
 
 
         sensor_msgs::PointCloud2Iterator<float> iter_x(velodyne_cloud_, "x");
@@ -254,6 +250,52 @@ namespace traversability_test {
         }
 
         isCloudIn = true;
+    }
+
+
+    void TMapping::gridMapToInitTraversabilityMapCallback(const grid_map_msgs::GridMap& message) {
+
+
+        // To sensor_msgs::PointCloud2
+        grid_map::GridMapRosConverter::fromMessage(message, gridMap_);
+        grid_map::GridMapRosConverter::toPointCloud(gridMap_,"elevation", submap_cloud2);
+        submap_cloud2.fields[9].name = "intensity";
+
+    }
+
+    void TMapping::pointCloudCallback(const sensor_msgs::PointCloud2& message) {
+
+//        sensor_msgs::PointCloud submap_cloud;
+//        sensor_msgs::PointCloud submapTransformed_cloud;
+//        sensor_msgs::convertPointCloud2ToPointCloud(message, submap_cloud);
+//        //To gridMap_ frame        
+//        try {
+//            transformListener_.transformPointCloud("/map", message.header.stamp, submap_cloud, velodyneTopic_, submapTransformed_cloud);
+//        } catch (tf::TransformException& ex) {
+//        ROS_ERROR("%s", ex.what());
+//        return;
+//        }
+//        sensor_msgs::convertPointCloudToPointCloud2(submapTransformed_cloud, velodyne_cloud_);
+
+////        cout<<velodyne_cloud_.fields[0].name<<endl;
+////        cout<<velodyne_cloud_.fields[3].name<<endl;
+////        cout<<velodyne_cloud_.fields[4].name<<endl;
+
+
+//        sensor_msgs::PointCloud2Iterator<float> iter_x(velodyne_cloud_, "x");
+//        sensor_msgs::PointCloud2Iterator<float> iter_y(velodyne_cloud_, "y");
+//        sensor_msgs::PointCloud2Iterator<float> iter_z(velodyne_cloud_, "z");
+//        sensor_msgs::PointCloud2Iterator<float> iter_intensity(velodyne_cloud_, "intensity");
+
+//        for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_intensity)
+//        {
+//            grid_map::Index index;
+//            grid_map::Position position(*iter_x, *iter_y);
+//            if (!gridMap_.getIndex(position, index)) continue;
+//            *iter_intensity = gridMap_.at("traversability", index);
+//        }
+
+//        isCloudIn = true;
     }
 
 }  // namespace traversability_test

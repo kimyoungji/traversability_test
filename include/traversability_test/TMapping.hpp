@@ -33,7 +33,6 @@
 #include <sensor_msgs/Image.h>
 #include <tf/transform_listener.h>
 
-
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/point_cloud_conversion.h>
@@ -47,6 +46,8 @@
 #include <message_filters/cache.h>
 #include <message_filters/subscriber.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
+
+#include <depth_image_proc/depth_conversions.h>
 
 // STD
 #include <string>
@@ -68,7 +69,9 @@ class TMapping {
     //! Image subscriber.
     image_transport::ImageTransport *it_;
     image_transport::CameraSubscriber imageSubscriber_;
+    image_transport::CameraSubscriber depthSubscriber_;
 //    ros::Subscriber imageSubscriber_;
+    std::string depthTopic_;
     std::string imageTopic_;
     std::string cameraTopic_;
     std::string pointCloudTopic_;
@@ -91,6 +94,7 @@ class TMapping {
     ros::Subscriber velodyneSubscriber_;
 
     // Callbacks.
+    void depthCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg);
     void imageCallback(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr & infomsg);
     void gridMapToInitTraversabilityMapCallback(const grid_map_msgs::GridMap& message);
     void pointCloudCallback(const sensor_msgs::PointCloud2& message);

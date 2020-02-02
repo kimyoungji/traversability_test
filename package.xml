@@ -23,6 +23,7 @@
   <depend>pcl_ros</depend>
   <depend>cv_bridge</depend>
   <depend>message_filters</depend>
+  <depend>depth_image_proc</depend>
   <depend>cmake_modules</depend>
   <build_export_depend>eigen</build_export_depend>
 

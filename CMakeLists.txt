@@ -28,6 +28,7 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
   cv_bridge
   message_filters
+  depth_image_proc
 )
 
 ## System dependencies are found with CMake's conventions
@@ -62,7 +63,8 @@ catkin_package(
     image_geometry
     pcl_ros
     cv_bridge
-    message_filters    
+    message_filters
+    depth_image_proc    
 )
 
 ###########
