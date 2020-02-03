@@ -29,12 +29,12 @@ namespace traversability_test {
 //        message_filters::TimeSynchronizer<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> sync(image_sub, depth_sub, info_sub, 10);
 //        sync.registerCallback(boost::bind(&TMapping::imagesCallback, this, _1, _2, _3));
 
-        velodyneSubscriber_ = nodeHandle_.subscribe(pointCloudTopic_, 1, &TMapping::pointCloudCallback, this);
+//        velodyneSubscriber_ = nodeHandle_.subscribe(pointCloudTopic_, 1, &TMapping::pointCloudCallback, this);
 
 
-        robotPoseSubscriber_.subscribe(nodeHandle_, robotPoseTopic_, 1);
-        robotPoseCache_.connectInput(robotPoseSubscriber_);
-        robotPoseCache_.setCacheSize(robotPoseCacheSize_);
+//        robotPoseSubscriber_.subscribe(nodeHandle_, robotPoseTopic_, 1);
+//        robotPoseCache_.connectInput(robotPoseSubscriber_);
+//        robotPoseCache_.setCacheSize(robotPoseCacheSize_);
 
         gridMapToInitTraversabilityMapSubscriber_ = nodeHandle_.subscribe(
                 gridMapToInitTraversabilityMapTopic_, 1, &TMapping::gridMapToInitTraversabilityMapCallback, this);
@@ -416,8 +416,8 @@ namespace traversability_test {
 
         // To sensor_msgs::PointCloud2
         grid_map::GridMapRosConverter::fromMessage(message, gridMap_);
-        grid_map::GridMapRosConverter::toPointCloud(gridMap_,"elevation", submap_cloud2);
-        submap_cloud2.fields[9].name = "intensity";
+//        grid_map::GridMapRosConverter::toPointCloud(gridMap_,"elevation", submap_cloud2);
+//        submap_cloud2.fields[9].name = "intensity";
 
     }
 
