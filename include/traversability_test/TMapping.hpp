@@ -47,6 +47,7 @@
 #include <message_filters/cache.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <depth_image_proc/depth_conversions.h>
@@ -60,6 +61,8 @@ namespace traversability_test {
 class TMapping {
 
   public:
+
+    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::CameraInfo> MySyncPolicy;
     TMapping(ros::NodeHandle& nodeHandle);
     ~TMapping();
   private:
@@ -72,10 +75,15 @@ class TMapping {
     image_transport::ImageTransport *it_;
     image_transport::CameraSubscriber imageSubscriber_;
     image_transport::CameraSubscriber depthSubscriber_;
+    message_filters::Subscriber<sensor_msgs::Image> *image_sub_;
+    message_filters::Subscriber<sensor_msgs::Image> *depth_sub_;
+    message_filters::Subscriber<sensor_msgs::CameraInfo> *info_sub_;
+    message_filters::Synchronizer<MySyncPolicy> *sync_;
 //    ros::Subscriber imageSubscriber_;
     std::string depthTopic_;
     std::string imageTopic_;
     std::string cameraTopic_;
+    std::string cameraBase_;
     std::string pointCloudTopic_;
     std::string velodyneTopic_;
 //    double imageResolution_;
@@ -116,12 +124,16 @@ class TMapping {
 //    pcl::PCLPointCloud2 submapTransformed_;
     sensor_msgs::PointCloud2 velodyne_cloud_;
 //    pcl::PCLPointCloud2 tiltedLidar_;
+    sensor_msgs::ImageConstPtr msg_;
 
     //map
     grid_map::GridMap gridMap_;
+    std::vector<grid_map::GridMap> gridMapContainer_;
 
     //boolean
     bool isCloudIn;
+    
+//    double curMapTime_;
 
 //    pcl::PointCloud<pcl::PointXYZINormal>::Ptr ProjectToPlane(pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud, Eigen::Vector3f origin, Eigen::Vector3f axis_x, Eigen::Vector3f axis_y)
 //    {
