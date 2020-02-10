@@ -55,6 +55,7 @@
 // STD
 #include <string>
 #include <vector>
+#include <boost/filesystem.hpp>
 
 namespace traversability_test {
 
@@ -101,6 +102,7 @@ class TMapping {
     //! Grid Map topic to initialize traversability map.
     ros::Subscriber gridMapToInitTraversabilityMapSubscriber_;
     std::string gridMapToInitTraversabilityMapTopic_;
+    std::string mapDir_;
     ros::Subscriber velodyneSubscriber_;
 
     // Callbacks.
@@ -129,6 +131,7 @@ class TMapping {
     //map
     grid_map::GridMap gridMap_;
     std::vector<grid_map::GridMap> gridMapContainer_;
+    void loadMaps();
 
     //boolean
     bool isCloudIn;

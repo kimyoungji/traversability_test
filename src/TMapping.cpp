@@ -18,6 +18,8 @@ namespace traversability_test {
 
         readParameters();
 
+        loadMaps();
+
         // Subscribers
 //        it_ = new image_transport::ImageTransport(nodeHandle_);
 //        depthSubscriber_ = it_->subscribeCamera(depthTopic_, 1, &TMapping::depthCallback, this);
@@ -60,6 +62,7 @@ namespace traversability_test {
 
         // Read parameters for grid map subscriber.
         nodeHandle_.param("grid_map_topic_name", gridMapToInitTraversabilityMapTopic_, string("/traversability_estimation/traversability_map"));
+        nodeHandle_.param("traversability_map_dir", mapDir_, string("/home/youngji/workspace/maps/cassie2/traversability/"));
 //        nodeHandle_.param("grid_map_topic_name", gridMapToInitTraversabilityMapTopic_, string("/elevation_mapping/elevation_map"));
 
         cout<<gridMapToInitTraversabilityMapTopic_<<endl;
@@ -336,6 +339,30 @@ namespace traversability_test {
 
     }
 
+    void TMapping::loadMaps(){
+        grid_map::GridMap map;
+
+        typedef std::vector<boost::filesystem::path> pathVec;             // store paths,
+        pathVec v;                                // so we can sort them later
+
+        std::copy( boost::filesystem::directory_iterator(mapDir_), boost::filesystem::directory_iterator(), std::back_inserter(v));
+
+        std::sort(v.begin(), v.end());             // sort, since directory iteration
+                                              // is not ordered on some file systems
+
+        for (pathVec::const_iterator it(v.begin()), it_end(v.end()); it != it_end; ++it){
+//        for ( boost::filesystem::directory_iterator it(mapDir_); it!= boost::filesystem::directory_iterator(); ++it){
+            std::string load_file = mapDir_ + it->filename().string();
+            cout<<load_file<<endl;
+            grid_map::GridMapRosConverter::loadFromBag(load_file, "traversability_estimation/traversability_map", map);
+            gridMapContainer_.push_back(map);
+            if (!isCloudIn){
+                gridMap_ = gridMapContainer_.front();//.pop_front();
+                gridMapContainer_.erase(gridMapContainer_.begin());
+                isCloudIn = true;
+            }
+        }
+    }
     void TMapping::pointCloudCallback(const sensor_msgs::PointCloud2& message) {
 
 //        sensor_msgs::PointCloud submap_cloud;

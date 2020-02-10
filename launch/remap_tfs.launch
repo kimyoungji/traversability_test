@@ -1,0 +1,11 @@
+<launch>
+    <node pkg="tf" type="tf_remap" name="tf_remapper" output="screen">
+      <rosparam param="mappings">
+        [{old: /odom, new: /map}, {old: cassie/pelvis, new: odom}]
+      </rosparam>
+    </node>
+
+    <node pkg="rosbag" type="play" name="player" args="--pause -r 0.5 /home/youngji/Desktop/2019-10-01-19-03-19.bag"> #
+      <remap from="tf" to="tf_old" />
+    </node>
+</launch>
